@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.22;
 
-import "forge-std/Test.sol";
-import "forge-std/console.sol";
-import "../src/GenericRouter.sol";
-import "../src/IExchangeRouter.sol";
+import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
+import {SpectrumRouter} from "../src/SpectrumRouter.sol";
+import {ISpectrumRouter, AmountsOutHop, ReservesHop} from "../src/interfaces/ISpectrumRouter.sol";
+import {IBasicRouter, IStructsRouter, IStructsWithFactoryRouter} from "../src/interfaces/IExchangeRouter.sol";
 
-contract GenericRouterTest is Test {
+contract SpectrumRouterTest is Test {
     uint256 mainnetForkId;
     uint256 baseForkId;
 
@@ -23,7 +24,13 @@ contract GenericRouterTest is Test {
     address public constant base_aerodrome_router = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43;
     address public constant base_aerodrome_factory = 0x420DD381b31aEf6683db6B902084cB0FFECe40Da;
 
+    address public owner;
+    ISpectrumRouter public mainnet_router;
+    ISpectrumRouter public base_router;
+
     function setUp() public {
+        owner = msg.sender;
+
         // Creates a mainnet fork
         uint256 mainnetForkBlock = 18462000;
         mainnetForkId = vm.createSelectFork(vm.rpcUrl("mainnet"), mainnetForkBlock);
@@ -31,13 +38,18 @@ contract GenericRouterTest is Test {
         // Creates a base fork
         uint256 baseForkBlock = 5937209;
         baseForkId = vm.createSelectFork(vm.rpcUrl("base"), baseForkBlock);
+
+        // Deploy the router on mainnet
+        vm.selectFork(mainnetForkId);
+        mainnet_router = new SpectrumRouter(owner);
+
+        // Deploy the router on base
+        vm.selectFork(baseForkId);
+        base_router = new SpectrumRouter(owner);
     }
 
-    function testMultihopSingleHop() public returns (uint256 amountOut) {
+    function testGetAmountsOutSingleHop() public returns (uint256 amountOut) {
         vm.selectFork(mainnetForkId);
-
-        // Deploy the router
-        GenericRouter router = new GenericRouter();
 
         // Easy access to the variables
         address token0 = mainnet_weth;
@@ -52,19 +64,16 @@ contract GenericRouterTest is Test {
         bytes memory data = abi.encodeWithSelector(selector, 1 ether, path);
 
         // Construct our hops
-        Hop[] memory hops = new Hop[](1);
-        hops[0] = Hop(exchange_router, data);
+        AmountsOutHop[] memory hops = new AmountsOutHop[](1);
+        hops[0] = AmountsOutHop(exchange_router, data);
 
-        // Execute the multihop
-        (, amountOut) = router.multihop(token0, hops);
+        // Execute the call
+        (, amountOut) = mainnet_router.getAmountsOut(token0, hops);
         assertGt(amountOut, 0);
     }
 
-    function testMultihopMultipleHops() public returns (uint256 amountOut) {
+    function testGetAmountsOutMultipleHops() public returns (uint256 amountOut) {
         vm.selectFork(mainnetForkId);
-
-        // Deploy the router
-        GenericRouter router = new GenericRouter();
 
         // Easy access to the variables
         address token0 = mainnet_wbtc;
@@ -88,20 +97,17 @@ contract GenericRouterTest is Test {
         bytes memory data2 = abi.encodeWithSelector(selector, 1 ether, path2);
 
         // Construct our hops
-        Hop[] memory hops = new Hop[](2);
-        hops[0] = Hop(exchange_router1, data1);
-        hops[1] = Hop(exchange_router2, data2);
+        AmountsOutHop[] memory hops = new AmountsOutHop[](2);
+        hops[0] = AmountsOutHop(exchange_router1, data1);
+        hops[1] = AmountsOutHop(exchange_router2, data2);
 
-        // Execute the multihop
-        (, amountOut) = router.multihop(token0, hops);
+        // Execute the call
+        (, amountOut) = mainnet_router.getAmountsOut(token0, hops);
         assertGt(amountOut, 0);
     }
 
-    function testMultihopMultipleRouterTypes() public returns (uint256 amountOut) {
+    function testGetAmountsOutMultipleRouterTypes() public returns (uint256 amountOut) {
         vm.selectFork(baseForkId);
-
-        // Deploy the router
-        GenericRouter router = new GenericRouter();
 
         // Easy access to the variables
         address token0 = base_aero;
@@ -120,12 +126,12 @@ contract GenericRouterTest is Test {
         bytes memory data2 = abi.encodeWithSelector(BasicRouter.getAmountsOut.selector, 1 ether, path);
 
         // Construct our hops
-        Hop[] memory hops = new Hop[](2);
-        hops[0] = Hop(base_aerodrome_router, data1);
-        hops[1] = Hop(base_baseswap_router, data2);
+        AmountsOutHop[] memory hops = new AmountsOutHop[](2);
+        hops[0] = AmountsOutHop(base_aerodrome_router, data1);
+        hops[1] = AmountsOutHop(base_baseswap_router, data2);
 
-        // Execute the multihop
-        (, amountOut) = router.multihop(token0, hops);
+        // Execute the call
+        (, amountOut) = base_router.getAmountsOut(token0, hops);
         assertGt(amountOut, 0);
     }
 }
