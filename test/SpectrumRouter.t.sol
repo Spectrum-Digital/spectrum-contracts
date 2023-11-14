@@ -4,7 +4,7 @@ pragma solidity 0.8.22;
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {SpectrumRouter} from "../src/SpectrumRouter.sol";
-import {ISpectrumRouter, AmountsOutHop, ReservesHop} from "../src/interfaces/ISpectrumRouter.sol";
+import {ISpectrumRouter, AmountsOutHop} from "../src/interfaces/ISpectrumRouter.sol";
 import {IBasicRouter, IStructsRouter, IStructsWithFactoryRouter} from "../src/interfaces/IExchangeRouter.sol";
 
 contract SpectrumRouterTest is Test {
@@ -41,11 +41,13 @@ contract SpectrumRouterTest is Test {
 
         // Deploy the router on mainnet
         vm.selectFork(mainnetForkId);
-        mainnet_router = new SpectrumRouter(owner);
+        mainnet_router = new SpectrumRouter();
+        mainnet_router.initialize(owner);
 
         // Deploy the router on base
         vm.selectFork(baseForkId);
-        base_router = new SpectrumRouter(owner);
+        base_router = new SpectrumRouter();
+        base_router.initialize(owner);
     }
 
     function testGetAmountsOutSingleHop() public returns (uint256 amountOut) {
@@ -55,7 +57,7 @@ contract SpectrumRouterTest is Test {
         address token0 = mainnet_weth;
         address token1 = mainnet_usdc;
         address exchange_router = mainnet_uniswap_router;
-        bytes4 selector = BasicRouter.getAmountsOut.selector;
+        bytes4 selector = IBasicRouter.getAmountsOut.selector;
 
         // Construct our path
         address[] memory path = new address[](2);
@@ -68,7 +70,7 @@ contract SpectrumRouterTest is Test {
         hops[0] = AmountsOutHop(exchange_router, data);
 
         // Execute the call
-        (, amountOut) = mainnet_router.getAmountsOut(token0, hops);
+        amountOut = mainnet_router.getAmountsOut(hops);
         assertGt(amountOut, 0);
     }
 
@@ -81,7 +83,7 @@ contract SpectrumRouterTest is Test {
         address token2 = mainnet_usdc;
         address exchange_router1 = mainnet_uniswap_router;
         address exchange_router2 = mainnet_sushiswap_router;
-        bytes4 selector = BasicRouter.getAmountsOut.selector;
+        bytes4 selector = IBasicRouter.getAmountsOut.selector;
 
         // Construct our path between token0 and token1
         address[] memory path1 = new address[](2);
@@ -102,7 +104,7 @@ contract SpectrumRouterTest is Test {
         hops[1] = AmountsOutHop(exchange_router2, data2);
 
         // Execute the call
-        (, amountOut) = mainnet_router.getAmountsOut(token0, hops);
+        amountOut = mainnet_router.getAmountsOut(hops);
         assertGt(amountOut, 0);
     }
 
@@ -115,15 +117,15 @@ contract SpectrumRouterTest is Test {
         address token2 = base_usdc;
 
         // Construct our path between token0 and token1 using the StructsWithFactoryRouter
-        StructsWithFactoryRouter.Route[] memory routes = new StructsWithFactoryRouter.Route[](1);
-        routes[0] = StructsWithFactoryRouter.Route(token0, token1, false, base_aerodrome_factory);
-        bytes memory data1 = abi.encodeWithSelector(StructsWithFactoryRouter.getAmountsOut.selector, 1 ether, routes);
+        IStructsWithFactoryRouter.Route[] memory routes = new IStructsWithFactoryRouter.Route[](1);
+        routes[0] = IStructsWithFactoryRouter.Route(token0, token1, false, base_aerodrome_factory);
+        bytes memory data1 = abi.encodeWithSelector(IStructsWithFactoryRouter.getAmountsOut.selector, 1 ether, routes);
 
         // Construct our path between token1 and token2 using the BasicRouter
         address[] memory path = new address[](2);
         path[0] = token1;
         path[1] = token2;
-        bytes memory data2 = abi.encodeWithSelector(BasicRouter.getAmountsOut.selector, 1 ether, path);
+        bytes memory data2 = abi.encodeWithSelector(IBasicRouter.getAmountsOut.selector, 1 ether, path);
 
         // Construct our hops
         AmountsOutHop[] memory hops = new AmountsOutHop[](2);
@@ -131,7 +133,7 @@ contract SpectrumRouterTest is Test {
         hops[1] = AmountsOutHop(base_baseswap_router, data2);
 
         // Execute the call
-        (, amountOut) = base_router.getAmountsOut(token0, hops);
+        amountOut = base_router.getAmountsOut(hops);
         assertGt(amountOut, 0);
     }
 }

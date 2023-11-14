@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.22;
 
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {TransparentUpgradeableProxy} from "openzeppelin-contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {Ownable2StepUpgradeable} from "openzeppelin-contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {IPair} from "./interfaces/IPair.sol";
-import {ISpectrumRouter} from "./interfaces/ISpectrumRouter.sol";
+import {ISpectrumRouter, PoolRequestCandidateResult, PoolRequestLeg, AmountsOutHop} from "./interfaces/ISpectrumRouter.sol";
 
 contract SpectrumRouter is ISpectrumRouter, Ownable2StepUpgradeable {
     /**
@@ -12,30 +12,22 @@ contract SpectrumRouter is ISpectrumRouter, Ownable2StepUpgradeable {
      * @param owner The address of the owner of the contract.
      */
     function initialize(address owner) public initializer {
-        if (owner == address(0)) revert VaultFactory__InvalidOwner();
+        if (owner == address(0)) revert Initialize__InvalidOwner();
         __Ownable2Step_init();
         _transferOwnership(owner);
     }
 
-    function getReserves(address tokenIn, ReservesHop[] calldata hops) public view returns (address token, bytes[] memory results) {
-        uint256 length = hops.length;
+    function getAmountsOutCandidates(AmountsOutHop[][] calldata candidates) external view returns (uint256[] memory amountOut) {
+        uint256 length = candidates.length;
 
-        results = new bytes[](length);
+        amountOut = new uint256[](length);
         for (uint256 i; i < length; i++) {
-            ReservesHop memory hop = hops[i];
-
-            // Call the pair with the payload.
-            (bool success, bytes memory callResult) = hop.pair.staticcall(hop.data);
-            if (!success) revert SpectrumRouter__GetReservesCallFailure();
-
-            // We're not going to decode the result, because it may differ per AMM.
-            results[i] = callResult;
+            uint256 result = getAmountsOut(candidates[i]);
+            amountOut[i] = result;
         }
-
-        return (tokenIn, results);
     }
 
-    function getAmountsOut(address tokenIn, AmountsOutHop[] calldata hops) public view returns (address token, uint256 amountOut) {
+    function getAmountsOut(AmountsOutHop[] calldata hops) public view returns (uint256 amountOut) {
         uint256 length = hops.length;
 
         for (uint256 i; i < length; i++) {
@@ -47,15 +39,52 @@ contract SpectrumRouter is ISpectrumRouter, Ownable2StepUpgradeable {
 
             // Call the router with the payload.
             (bool success, bytes memory callResult) = hop.router.staticcall(data);
-            if (!success) revert SpectrumRouter__GetAmountsOutCallFailure();
+            if (!success) revert GetAmountsOut__CallFailure();
 
             // Decode the result.
             uint256[] memory amounts = abi.decode(callResult, (uint256[]));
-            if (amounts.length == 0) revert SpectrumRouter__GetAmountsOutParseFailure();
+            if (amounts.length == 0) revert GetAmountsOut__ParseFailure();
             amountOut = amounts[amounts.length - 1];
         }
+    }
 
-        return (tokenIn, amountOut);
+    function getPoolRequestsCandidates(
+        PoolRequestLeg[][] calldata candidates
+    ) external view returns (PoolRequestCandidateResult[] memory result) {
+        uint256 length = candidates.length;
+
+        result = new PoolRequestCandidateResult[](length);
+        for (uint256 i; i < length; i++) {
+            (bytes[] memory results, address[] memory tokens0) = getPoolRequests(candidates[i]);
+            result[i] = PoolRequestCandidateResult({results: results, tokens0: tokens0});
+        }
+    }
+
+    function getPoolRequests(PoolRequestLeg[] calldata legs) public view returns (bytes[] memory results, address[] memory tokens0) {
+        uint256 length = legs.length;
+
+        results = new bytes[](length);
+        tokens0 = new address[](length);
+        for (uint256 i; i < length; i++) {
+            PoolRequestLeg memory leg = legs[i];
+
+            // Now retrieve the pair for the given set of tokens.
+            (bool pairSuccess, bytes memory pairResult) = leg.factory.staticcall(leg.getPairCalldata);
+            if (!pairSuccess) revert GetPoolData__PairCallFailure();
+            address pair = abi.decode(pairResult, (address));
+            if (pair == address(0)) revert GetPoolData__InvalidPool();
+
+            // Call the pool with the payload.
+            (bool success, bytes memory callResult) = pair.staticcall(leg.poolRequestCalldata);
+            if (!success) revert GetPoolData__ResultCallFailure();
+
+            // Also return the order of the pair tokens.
+            address token0 = IPair(pair).token0();
+            tokens0[i] = token0;
+
+            // We're not going to decode the result, because we don't know what is requested.
+            results[i] = callResult;
+        }
     }
 
     function replaceAmountsIn(bytes memory data, uint256 amountIn) internal pure returns (bytes memory) {
