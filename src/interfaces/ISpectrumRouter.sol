@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.22;
 
-struct AmountsOutHop {
+struct AmountsOut {
     address router;
     bytes data;
 }
 
-struct PoolRequestLeg {
+struct PoolRequest {
     address router;
     address factory;
     bytes getPairCalldata;
     bytes poolRequestCalldata;
 }
 
-struct PoolRequestCandidateResult {
+struct PoolRequestResult {
     bytes[] results;
     address[] tokens0;
 }
@@ -28,15 +28,17 @@ interface ISpectrumRouter {
     error GetAmountsOut__CallFailure();
     error GetAmountsOut__ParseFailure();
 
+    /**
+     * @dev Initialize the contract.
+     * @param owner The address of the owner of the contract.
+     */
     function initialize(address owner) external;
 
-    function getAmountsOutCandidates(AmountsOutHop[][] calldata candidates) external view returns (uint256[] memory amountOut);
+    function getAmountsOutMulti(AmountsOut[][] calldata paths) external view returns (uint256[] memory amountOut);
 
-    function getAmountsOut(AmountsOutHop[] calldata hops) external view returns (uint256 amountOut);
+    function getAmountsOut(AmountsOut[] calldata path) external view returns (uint256 amountOut);
 
-    function getPoolRequestsCandidates(
-        PoolRequestLeg[][] calldata candidates
-    ) external view returns (PoolRequestCandidateResult[] memory result);
+    function getPoolRequestsMulti(PoolRequest[][] calldata paths) external view returns (PoolRequestResult[] memory result);
 
-    function getPoolRequests(PoolRequestLeg[] calldata legs) external view returns (bytes[] memory results, address[] memory tokens0);
+    function getPoolRequests(PoolRequest[] calldata path) external view returns (bytes[] memory results, address[] memory tokens0);
 }
